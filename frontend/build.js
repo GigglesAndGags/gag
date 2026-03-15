@@ -117,19 +117,19 @@ function buildMetaTags(route, routeConfig) {
   const canonicalUrl = route === "/" ? SITE_URL : `${SITE_URL}${route}`;
   const imageUrl = `${SITE_URL}/${routeConfig.ogImage}`;
 
-  // Farcaster frame embed meta (Mini App launch action)
+  // Farcaster Mini App embed meta (current format)
   // URL points to Vercel host to avoid eth.limo CSP frame-ancestors restriction
   const miniAppLaunchUrl = route === "/" ? MINIAPP_URL : `${MINIAPP_URL}${route}`;
-  const fcFrameJson = JSON.stringify({
-    version: "next",
+  const fcMiniappJson = JSON.stringify({
+    version: "1",
     imageUrl: imageUrl,
     button: {
       title: routeConfig.fcButton || "Open App",
       action: {
-        type: "launch_frame",
+        type: "launch_miniapp",
         name: "Giggles and Gags",
         url: miniAppLaunchUrl,
-        splashImageUrl: `${SITE_URL}/og/default.png`,
+        splashImageUrl: `${SITE_URL}/og/splash-200.png`,
         splashBackgroundColor: "#07080c",
       },
     },
@@ -156,8 +156,8 @@ function buildMetaTags(route, routeConfig) {
   <meta name="twitter:description" content="${routeConfig.description}" />
   <meta name="twitter:image" content="${imageUrl}" />
 
-  <!-- Farcaster Frame Embed -->
-  <meta property="fc:frame" content='${fcFrameJson}' />
+  <!-- Farcaster Mini App Embed -->
+  <meta name="fc:miniapp" content='${fcMiniappJson}' />
 
   <!-- Canonical -->
   <link rel="canonical" href="${canonicalUrl}" />
@@ -251,17 +251,10 @@ function buildFarcasterManifest() {
         buttonTitle: "Unleash Chaos",
         splashImageUrl: `${SITE_URL}/og/splash-200.png`,
         splashBackgroundColor: "#07080c",
-        subtitle: "On-chain social damage on Base",
         description:
           "Non-transferable prank NFTs. Send a cursed message, fund the chaos, and the slot buffer decides what mints next. Pay to burn. Collect tribute.",
         primaryCategory: "social",
-        heroImageUrl: `${SITE_URL}/og/default.png`,
         tags: ["nft", "prank", "base", "social", "meme"],
-        tagline: "Send a cursed message.",
-        ogTitle: "GaG: On-Chain Social Damage",
-        ogDescription: "Non-transferable prank NFTs powered by stablecoins and poor judgment. On Base.",
-        ogImageUrl: `${SITE_URL}/og/default.png`,
-        castShareUrl: `${SITE_URL}`,
       },
     },
     null,
