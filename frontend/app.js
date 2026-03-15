@@ -48,37 +48,48 @@ let farcasterSdk = null;
 let isMiniApp = false;
 
 /**
- * Initialize Farcaster Mini App — call sdk.actions.ready() to dismiss splash,
- * and get the embedded wallet provider.
+ * Detect Farcaster SDK and check if we're in a mini app context.
  * The UMD bundle from jsdelivr exposes the SDK as window.miniapp.sdk.
- * Calling ready() outside a mini app context is harmless (it just does nothing).
- * Returns the EIP-1193 provider from the mini app, or null.
+ * Uses the SDK's own isInMiniApp() method for reliable detection.
  */
-async function initMiniApp() {
+async function detectMiniAppContext() {
   // The UMD bundle exposes miniapp.sdk globally
-  farcasterSdk = (typeof miniapp !== "undefined" && miniapp.sdk) ? miniapp.sdk : null;
-
-  if (!farcasterSdk) {
+  if (typeof miniapp === "undefined" || !miniapp.sdk) {
     console.log("[GaG] Farcaster SDK not available — normal browser mode");
-    return null;
+    return false;
   }
+  farcasterSdk = miniapp.sdk;
 
-  // Detect if we're in an iframe (mini app context)
+  // Use the SDK's own detection method
   try {
-    isMiniApp = window !== window.parent;
+    isMiniApp = await farcasterSdk.isInMiniApp();
+    console.log("[GaG] isInMiniApp():", isMiniApp);
   } catch (e) {
-    isMiniApp = true; // cross-origin iframe = embedded
+    // Fallback to iframe detection
+    try { isMiniApp = window !== window.parent; } catch (e2) { isMiniApp = true; }
+    console.log("[GaG] isInMiniApp() failed, iframe fallback:", isMiniApp);
   }
 
-  console.log("[GaG] Farcaster SDK found, isMiniApp:", isMiniApp, "— calling ready()...");
+  return isMiniApp;
+}
+
+/**
+ * Signal to the Farcaster client that the app is ready.
+ * MUST be called after the DOM is fully rendered.
+ * Returns the mini app wallet provider, or null.
+ */
+async function signalMiniAppReady() {
+  if (!farcasterSdk) return null;
+
+  console.log("[GaG] Calling sdk.actions.ready()...");
   try {
     await farcasterSdk.actions.ready();
-    console.log("[GaG] sdk.actions.ready() called — splash dismissed");
+    console.log("[GaG] ready() succeeded — splash should be dismissed");
   } catch (e) {
-    console.warn("[GaG] sdk.actions.ready() failed:", e);
+    console.warn("[GaG] ready() failed:", e);
   }
 
-  // Only try to get wallet provider if in mini app context
+  // Get the embedded wallet provider if in mini app context
   if (isMiniApp) {
     try {
       const ethProvider = await farcasterSdk.wallet.getEthereumProvider();
@@ -510,9 +521,10 @@ function bindGagPageShare(tokenIdStr) {
 //  Bootstrap
 // ---------------------------------------------------------------------------
 document.addEventListener("DOMContentLoaded", async () => {
-  // Initialize Farcaster/Base mini app if embedded
-  miniAppProvider = await initMiniApp();
+  // Step 1: Detect mini app context (but don't call ready() yet)
+  await detectMiniAppContext();
 
+  // Step 2: Set up all UI first — ready() must be called AFTER DOM is rendered
   initReadOnly();
   bindUI();
   updateContractDisplay();
@@ -520,7 +532,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   pollLiveStats();
   applyRouting();
 
-  // Auto-connect: in mini app context always try, otherwise check for existing connection
+  // Step 3: NOW signal ready — DOM is fully set up
+  miniAppProvider = await signalMiniAppReady();
+
+  // Step 4: Auto-connect wallet
   const ethProvider = getEthereumProvider();
   if (miniAppProvider) {
     connectWallet();
