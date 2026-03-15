@@ -801,6 +801,9 @@ section { padding: 80px 0; border-bottom: 1px solid #1a1d25; }
 .footer-links a { color: #666; }
 .footer-links a:hover { color: #ffcc00; }
 .footer-tagline { color: #333; width: 100%; text-align: center; margin-top: 12px; }
+.footer-contact { color: #444; width: 100%; text-align: center; margin-top: 6px; font-size: 0.75rem; }
+.footer-contact a { color: #555; }
+.footer-contact a:hover { color: #ffcc00; }
 
 /* ================================================================
    UTILITIES / RESPONSIVE

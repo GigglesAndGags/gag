@@ -331,6 +331,7 @@ function main() {
   fs.copyFileSync(path.join(SRC_DIR, "og", "default.png"), path.join(OUT_DIR, "og", "default.png"));
   fs.copyFileSync(path.join(SRC_DIR, "og", "icon-1024.png"), path.join(OUT_DIR, "og", "icon-1024.png"));
   fs.copyFileSync(path.join(SRC_DIR, "og", "splash-200.png"), path.join(OUT_DIR, "og", "splash-200.png"));
+  fs.copyFileSync(path.join(SRC_DIR, "og", "icon-32x32.svg"), path.join(OUT_DIR, "og", "icon-32x32.svg"));
   // Keep SVGs as fallback
   fs.writeFileSync(path.join(OUT_DIR, "og", "default.svg"), generateOGImage());
   fs.writeFileSync(path.join(OUT_DIR, "og", "icon-512.svg"), generateIcon512());
