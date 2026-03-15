@@ -42,6 +42,73 @@ async function sendWithAttribution(contract, method, args) {
 }
 
 // ---------------------------------------------------------------------------
+//  Farcaster Mini App Support
+// ---------------------------------------------------------------------------
+let farcasterSdk = null;
+let isMiniApp = false;
+
+/**
+ * Detect if running inside a Farcaster/Base mini app context.
+ * In a mini app, the page is embedded in an iframe — window !== window.parent.
+ */
+function detectMiniApp() {
+  try {
+    isMiniApp = window !== window.parent;
+  } catch (e) {
+    isMiniApp = true; // cross-origin iframe means embedded
+  }
+  return isMiniApp;
+}
+
+/**
+ * Initialize Farcaster Mini App — call sdk.actions.ready() to dismiss splash,
+ * and get the embedded wallet provider.
+ * The UMD bundle from jsdelivr exposes the SDK as window.miniapp.sdk.
+ * Returns the EIP-1193 provider from the mini app, or null.
+ */
+async function initMiniApp() {
+  if (!detectMiniApp()) return null;
+
+  // The UMD bundle exposes miniapp.sdk globally
+  farcasterSdk = (typeof miniapp !== "undefined" && miniapp.sdk) ? miniapp.sdk : null;
+
+  if (!farcasterSdk) {
+    console.warn("[GaG] Mini app context detected but SDK not available");
+    isMiniApp = false;
+    return null;
+  }
+
+  console.log("[GaG] Farcaster SDK available, calling ready()...");
+  try {
+    await farcasterSdk.actions.ready();
+    console.log("[GaG] sdk.actions.ready() called — splash dismissed");
+  } catch (e) {
+    console.warn("[GaG] sdk.actions.ready() failed:", e);
+  }
+
+  // Get the embedded wallet provider
+  try {
+    const ethProvider = await farcasterSdk.wallet.getEthereumProvider();
+    console.log("[GaG] Got mini app Ethereum provider");
+    return ethProvider;
+  } catch (e) {
+    console.warn("[GaG] Could not get mini app wallet provider:", e);
+    return null;
+  }
+}
+
+/** Cached mini app Ethereum provider (set during init). */
+let miniAppProvider = null;
+
+/**
+ * Get the best available EIP-1193 provider.
+ * Prefers the mini app provider, falls back to window.ethereum.
+ */
+function getEthereumProvider() {
+  return miniAppProvider || window.ethereum || null;
+}
+
+// ---------------------------------------------------------------------------
 //  State
 // ---------------------------------------------------------------------------
 let provider = null;
@@ -447,7 +514,10 @@ function bindGagPageShare(tokenIdStr) {
 // ---------------------------------------------------------------------------
 //  Bootstrap
 // ---------------------------------------------------------------------------
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
+  // Initialize Farcaster/Base mini app if embedded
+  miniAppProvider = await initMiniApp();
+
   initReadOnly();
   bindUI();
   updateContractDisplay();
@@ -455,8 +525,11 @@ document.addEventListener("DOMContentLoaded", () => {
   pollLiveStats();
   applyRouting();
 
-  // Auto-connect if wallet was previously connected
-  if (window.ethereum && window.ethereum.selectedAddress) {
+  // Auto-connect: in mini app context always try, otherwise check for existing connection
+  const ethProvider = getEthereumProvider();
+  if (miniAppProvider) {
+    connectWallet();
+  } else if (ethProvider && ethProvider.selectedAddress) {
     connectWallet();
   }
 });
@@ -518,22 +591,27 @@ function bindUI() {
 //  Wallet Connection
 // ---------------------------------------------------------------------------
 async function connectWallet() {
-  if (!window.ethereum) {
-    alert("No Ethereum wallet detected. Please install MetaMask or a compatible wallet.");
+  const ethProvider = getEthereumProvider();
+  if (!ethProvider) {
+    if (isMiniApp) {
+      showStatus("Wallet provider not available in this mini app.", "error");
+    } else {
+      alert("No Ethereum wallet detected. Please install MetaMask or a compatible wallet.");
+    }
     return;
   }
 
   try {
     // 1. Always request accounts first so the wallet popup actually appears
-    await window.ethereum.request({ method: "eth_requestAccounts" });
+    await ethProvider.request({ method: "eth_requestAccounts" });
 
-    const browserProvider = new ethers.BrowserProvider(window.ethereum);
+    const browserProvider = new ethers.BrowserProvider(ethProvider);
     const network = await browserProvider.getNetwork();
 
     // 2. If on wrong chain, try to switch automatically before falling back to guard
     if (Number(network.chainId) !== GAG_CONFIG.chainId) {
       try {
-        await window.ethereum.request({
+        await ethProvider.request({
           method: "wallet_switchEthereumChain",
           params: [{ chainId: "0x" + GAG_CONFIG.chainId.toString(16) }],
         });
@@ -541,7 +619,7 @@ async function connectWallet() {
         // 4902 = chain not added yet — try adding it
         if (switchErr.code === 4902) {
           try {
-            await window.ethereum.request({
+            await ethProvider.request({
               method: "wallet_addEthereumChain",
               params: [{
                 chainId: "0x" + GAG_CONFIG.chainId.toString(16),
@@ -562,7 +640,7 @@ async function connectWallet() {
         }
       }
       // Re-create provider after chain switch
-      const updatedProvider = new ethers.BrowserProvider(window.ethereum);
+      const updatedProvider = new ethers.BrowserProvider(ethProvider);
       signer = await updatedProvider.getSigner();
       userAddress = await signer.getAddress();
       provider = updatedProvider;
@@ -586,9 +664,11 @@ async function connectWallet() {
       loadOwnedTokens(),
     ]);
 
-    // Listen for account/network changes
-    window.ethereum.on("accountsChanged", () => window.location.reload());
-    window.ethereum.on("chainChanged", () => window.location.reload());
+    // Listen for account/network changes (not available on all providers)
+    if (ethProvider.on) {
+      ethProvider.on("accountsChanged", () => window.location.reload());
+      ethProvider.on("chainChanged", () => window.location.reload());
+    }
   } catch (err) {
     console.error("Wallet connection failed:", err);
     showStatus("Wallet connection failed: " + err.message, "error");
@@ -597,15 +677,17 @@ async function connectWallet() {
 }
 
 async function switchToBase() {
+  const ethProvider = getEthereumProvider();
+  if (!ethProvider) return;
   try {
-    await window.ethereum.request({
+    await ethProvider.request({
       method: "wallet_switchEthereumChain",
       params: [{ chainId: "0x" + GAG_CONFIG.chainId.toString(16) }],
     });
     window.location.reload();
   } catch (err) {
     if (err.code === 4902) {
-      await window.ethereum.request({
+      await ethProvider.request({
         method: "wallet_addEthereumChain",
         params: [{
           chainId: "0x" + GAG_CONFIG.chainId.toString(16),
